@@ -2,11 +2,28 @@ import {useEffect, useRef, useState} from 'react';
 
 const Recognition = window.SpeechRecognition ?? window.webkitSpeechRecognition;
 
-export function useMicrophone({onTranscript, onError, onBusy}) {
-  const session = useRef(null);
-  const callbacks = useRef(null);
-  callbacks.current = {onTranscript, onError, onBusy};
-  const [status, setStatus] = useState('idle');
+type MicrophoneStatus = 'idle' | 'recording' | 'transcribing' | 'captured';
+
+interface MicrophoneCallbacks {
+  onTranscript(text: string): void;
+  onError(message: string): void;
+  onBusy(): void;
+}
+
+interface RecognitionAttempt {
+  input: SpeechRecognition;
+  results: string[];
+  held: boolean;
+  ended: boolean;
+  error?: SpeechRecognitionErrorCode;
+  timer?: number;
+}
+
+export function useMicrophone(handlers: MicrophoneCallbacks) {
+  const session = useRef<RecognitionAttempt | null>(null);
+  const callbacks = useRef(handlers);
+  callbacks.current = handlers;
+  const [status, setStatus] = useState<MicrophoneStatus>('idle');
   const [preview, setPreview] = useState('');
   const [speaking, setSpeaking] = useState(false);
 
@@ -31,7 +48,7 @@ export function useMicrophone({onTranscript, onError, onBusy}) {
     }
   }, []);
 
-  function complete(attempt) {
+  function complete(attempt: RecognitionAttempt) {
     if (session.current !== attempt) return;
     session.current = null;
     clearTimeout(attempt.timer);
@@ -51,7 +68,7 @@ export function useMicrophone({onTranscript, onError, onBusy}) {
   function press() {
     if (!Recognition || session.current) return;
     const input = new Recognition();
-    const attempt = {input, results: [], held: true, ended: false, error: null, timer: null};
+    const attempt: RecognitionAttempt = {input, results: [], held: true, ended: false};
     session.current = attempt;
     input.lang = 'th-TH';
     input.continuous = true;
@@ -105,7 +122,7 @@ export function useMicrophone({onTranscript, onError, onBusy}) {
       complete(attempt);
       return;
     }
-    attempt.timer = setTimeout(() => complete(attempt), 4500);
+    attempt.timer = window.setTimeout(() => complete(attempt), 4500);
     try { attempt.input.stop(); }
     catch { complete(attempt); }
   }

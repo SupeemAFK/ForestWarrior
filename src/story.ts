@@ -1,8 +1,26 @@
-const pause = ms => ({pause: ms});
-const say = (line, after) => ({line, after});
-const turn = (id, wait) => ({turn: id, wait});
+import type dialogue from './dialogue.json';
 
-export const story = [
+export type DialogueId = keyof typeof dialogue;
+export type TurnId = 'pickup' | 'report' | 'hardship' | 'kindness';
+export type SceneId = 'incoming' | 'report' | 'hardship' | 'kindness' | 'closing';
+export type Intent = 'question' | 'encourage' | 'empathy' | 'listen' | 'acknowledge' | 'other';
+
+export interface ListenStep {
+  turn: TurnId;
+  wait: number;
+}
+
+type StoryStep =
+  | {pause: number}
+  | {line: DialogueId; after: number}
+  | {signal: 'ring' | 'hangup'}
+  | ListenStep;
+
+const pause = (ms: number) => ({pause: ms});
+const say = (line: DialogueId, after: number) => ({line, after});
+const turn = (id: TurnId, wait: number): ListenStep => ({turn: id, wait});
+
+export const story: ReadonlyArray<{scene: SceneId; steps: readonly StoryStep[]}> = [
   { scene: 'incoming', steps: [
     pause(950), {signal: 'ring'}, pause(450), say('incoming', 320),
     turn('pickup', 7000), say('safe', 450)
@@ -25,14 +43,14 @@ export const story = [
   ] }
 ];
 
-export const replyHints = {
+export const replyHints: Record<TurnId, string> = {
   pickup: 'ลองตอบว่า “ศูนย์ได้ยินชัดครับ”',
   report: 'ลองบอกว่า “ยังอยู่ครับ เล่าต่อได้เลย”',
   hardship: 'ลองบอกว่าเข้าใจ หรือถามว่าอะไรทำให้เขาเหนื่อยที่สุด',
   kindness: 'ลองบอกว่ารู้สึกยังไง หรือถามต่อเรื่องของฝาก'
 };
 
-export function getIntent(text) {
+export function getIntent(text: string): Intent {
   const value = text.toLowerCase().replace(/[\s\p{P}]/gu, '');
   if (/ยังไง|อย่างไร|อะไร|ทำไม|ใคร|ที่ไหน|เรื่องไหน|รึเปล่า|หรือเปล่า|ไหม|มั้ย|เกิดอะไร|เล่าเพิ่ม|เล่าให้ฟังหน่อย/u.test(value)) return 'question';
   if (/กำลังใจ|สู้|เก่งมาก|พัก|ค่อยๆ|ลองคุย|เป็นห่วง|ขอบคุณ|ขอให้|ทำดีแล้ว/u.test(value)) return 'encourage';
@@ -42,7 +60,7 @@ export function getIntent(text) {
   return 'other';
 }
 
-export function replyFor(turn, intent, text = '') {
+export function replyFor(turn: TurnId, intent?: Intent, text = ''): DialogueId | null {
   if (turn === 'kindness') {
     if (!intent) return 'giftSilence';
     if (intent === 'question') {

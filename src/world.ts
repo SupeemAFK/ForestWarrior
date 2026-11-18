@@ -10,22 +10,35 @@ const RADIO = new T.Vector3(-1.25, 1.12, -2.59);
 const BRIDGE = new T.Vector3(2.73, .02, -9.9);
 const SHOT = new T.Vector3(.55, 1.64, 3.1);
 const up = new T.Vector3(0, 1, 0);
-let seed;
+type Point2 = readonly [number, number];
+type Point3 = readonly [number, number, number];
+type WorldMode = 'menu' | 'play' | 'end';
+type FocusTarget = '' | 'radio' | 'bridge';
+type WorldState = {locked?: boolean; focus?: FocusTarget};
+type ReadWaveform = (samples: Float32Array<ArrayBuffer>) => void;
+
+let seed: number;
 function rand() {
   seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
   return seed / 4294967296;
 }
-const between = (min, max) => min + rand() * (max - min);
+const between = (min: number, max: number) => min + rand() * (max - min);
 
-function texture(w, h, draw) {
+function texture(w: number, h: number, draw: (ctx: CanvasRenderingContext2D, width: number, height: number) => void): T.CanvasTexture<HTMLCanvasElement> {
   const canvas = document.createElement('canvas');
   canvas.width = w;
   canvas.height = h;
-  draw(canvas.getContext('2d'), w, h);
+  draw(canvasContext(canvas), w, h);
   const map = new T.CanvasTexture(canvas);
   map.colorSpace = T.SRGBColorSpace;
   map.anisotropy = 4;
   return map;
+}
+
+function canvasContext(canvas: HTMLCanvasElement) {
+  const context = canvas.getContext('2d');
+  if (!context) throw new Error('Canvas 2D is unavailable');
+  return context;
 }
 
 function grain() {
@@ -47,11 +60,11 @@ function grain() {
   return map;
 }
 
-function material(color, roughness = .84, extra = {}) {
+function material(color: T.ColorRepresentation, roughness = .84, extra: T.MeshStandardMaterialParameters = {}) {
   return new T.MeshStandardMaterial({ color, roughness, ...extra });
 }
 
-function box(parent, size, position, mat, rounded = 0) {
+function box(parent: T.Object3D, size: Point3, position: Point3, mat: T.Material, rounded = 0) {
   const shape = rounded ? new RoundedBoxGeometry(...size, 2, rounded) : new T.BoxGeometry(...size);
   const mesh = new T.Mesh(shape, mat);
   mesh.position.set(...position);
@@ -61,14 +74,14 @@ function box(parent, size, position, mat, rounded = 0) {
   return mesh;
 }
 
-function tube(parent, points, radius, mat) {
+function tube(parent: T.Object3D, points: readonly Point3[], radius: number, mat: T.Material) {
   const path = new T.CatmullRomCurve3(points.map(p => new T.Vector3(...p)));
   const mesh = new T.Mesh(new T.TubeGeometry(path, 20, radius, 6, false), mat);
   parent.add(mesh);
   return mesh;
 }
 
-function plane(parent, size, position, mat, rotation = 0) {
+function plane(parent: T.Object3D, size: Point2, position: Point3, mat: T.Material, rotation = 0) {
   const mesh = new T.Mesh(new T.PlaneGeometry(...size), mat);
   mesh.position.set(...position);
   mesh.rotation.x = rotation;
@@ -77,7 +90,7 @@ function plane(parent, size, position, mat, rotation = 0) {
   return mesh;
 }
 
-function cylinder(parent, radius, height, position, mat, top = radius) {
+function cylinder(parent: T.Object3D, radius: number, height: number, position: Point3, mat: T.Material, top = radius) {
   const mesh = new T.Mesh(new T.CylinderGeometry(top, radius, height, 12), mat);
   mesh.position.set(...position);
   mesh.castShadow = true;
@@ -86,12 +99,12 @@ function cylinder(parent, radius, height, position, mat, top = radius) {
   return mesh;
 }
 
-function buildRoom(scene, wood) {
+function buildRoom(scene: T.Scene, wood: T.Texture) {
   const boards = [0x6f5440, 0x88674e, 0x97785d, 0xa08264, 0x705642].map(color => material(color, .91, { map: wood }));
   const support = material(0x544035, .86, { map: wood });
   const dark = material(0x242824, .63);
   const roof = material(0x353c36, .88);
-  const woodAt = index => boards[index % boards.length];
+  const woodAt = (index: number) => boards[index % boards.length];
   for (let i = 0; i < 36; i++) {
     box(scene, [.235, .14, 8.75], [-4.26 + i * .244, -.12, .28], woodAt(i));
   }
@@ -172,7 +185,7 @@ function mapPaper() {
   });
 }
 
-function desk(scene, boards, support) {
+function desk(scene: T.Scene, boards: readonly T.Material[], support: T.Material) {
   const metal = material(0x313734, .41, { metalness: .39 });
   const plastic = material(0x202823, .71);
   const muted = material(0x516151, .8);
@@ -263,9 +276,9 @@ function desk(scene, boards, support) {
   const terminalMap = texture(768,460,() => {});
   plane(terminal,[.845,.504],[0,.012,.082],new T.MeshBasicMaterial({map:terminalMap}));
   box(terminal,[.018,.009,.007],[.426,-.286,.078],led);
-  const consoleCtx = terminalMap.image.getContext('2d');
+  const consoleCtx = canvasContext(terminalMap.image);
   const canvas = screenMap.image;
-  const ctx = canvas.getContext('2d');
+  const ctx = canvasContext(canvas);
   const scope = {left: 31, top: 264, width: 706, height: 144};
   const samples = new Float32Array(512);
   let showScope = false;
@@ -313,7 +326,7 @@ function desk(scene, boards, support) {
     terminalMap.needsUpdate = true;
   }
 
-  function animateScope(now, readWaveform) {
+  function animateScope(now: number, readWaveform: ReadWaveform) {
     if (!showScope || now - lastScopeFrame < 40) return;
     lastScopeFrame = now;
     readWaveform(samples);
@@ -324,7 +337,7 @@ function desk(scene, boards, support) {
     drawScope();
   }
 
-  function updateRadio(channel, status, live, transcript, recorded) {
+  function updateRadio(channel: string, status: string, live: boolean, transcript?: string, recorded = false) {
     ctx.fillStyle = '#192b21'; ctx.fillRect(0, 0, 512, 144);
     ctx.fillStyle = '#a6e3a6'; ctx.textBaseline = 'middle';
     ctx.font = '700 55px FieldThai, sans-serif'; ctx.fillText(channel, 26, 54);
@@ -390,7 +403,7 @@ function desk(scene, boards, support) {
   return {updateRadio,animateScope,mug};
 }
 
-function landscape(scene, boards, wood) {
+function landscape(scene: T.Scene, boards: readonly T.Material[], wood: T.Texture) {
   const turf = material(0x163127, .96);
   const ground = new T.PlaneGeometry(116, 110, 58, 55);
   ground.rotateX(-Math.PI / 2);
@@ -406,8 +419,9 @@ function landscape(scene, boards, wood) {
   const sod = new T.Mesh(ground, turf);
   sod.receiveShadow = true; scene.add(sod);
 
+  const time = {value: 0};
   const water = new T.ShaderMaterial({
-    uniforms: { time: { value: 0 }, mist: { value: new T.Color(0x294856) } },
+    uniforms: { time, mist: { value: new T.Color(0x294856) } },
     vertexShader: `varying vec3 vWorld; uniform float time;
       void main(){vec3 p=position; p.z+=sin(p.x*4.+time*1.8)*.014+cos(p.y*7.+time*1.13)*.009;
         vWorld=(modelMatrix*vec4(p,1.)).xyz; gl_Position=projectionMatrix*viewMatrix*vec4(vWorld,1.);}`,
@@ -431,7 +445,7 @@ function landscape(scene, boards, wood) {
     plank.rotation.y = between(-.025,.025);
   }
   for (const x of [1.98,3.48]) {
-    const rail = [];
+    const rail: Point3[] = [];
     for (let i = 0; i <= 6; i++) {
       const z = -6.97 - i * 1.135;
       const y = -.12 - Math.sin(i / 6 * Math.PI) * .18;
@@ -493,13 +507,13 @@ function landscape(scene, boards, wood) {
     }
   }
   scene.add(leaves);
-  return water.uniforms.time;
+  return time;
 }
 
-function makeRain(scene, reduce) {
+function makeRain(scene: T.Scene, reduce: boolean) {
   const count = reduce ? 220 : 690;
   const position = new Float32Array(count * 6);
-  const drops = [];
+  const drops: [x: number, y: number, z: number, length: number, speed: number][] = [];
   for (let i = 0; i < count; i++) {
     let x = between(-24, 24);
     const z = between(-36, 3);
@@ -512,7 +526,7 @@ function makeRain(scene, reduce) {
   const mesh = new T.LineSegments(geo,new T.LineBasicMaterial({color:0x87c1ce, transparent:true, opacity:.32, depthWrite:false}));
   mesh.frustumCulled = false;
   scene.add(mesh);
-  return dt => {
+  return (dt: number) => {
     for (let i=0; i < count; i++) {
       const drop = drops[i];
       drop[1] -= dt * drop[4];
@@ -539,7 +553,12 @@ const film = {
     }`
 };
 
-export function createWorld(host, onState, onFootstep, readRadioWaveform) {
+export function createWorld(
+  host: HTMLElement,
+  onState: (state: WorldState) => void,
+  onFootstep: () => void,
+  readRadioWaveform: ReadWaveform
+) {
   seed = 18625;
   const lowMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const renderer = new T.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
@@ -608,12 +627,12 @@ export function createWorld(host, onState, onFootstep, readRadioWaveform) {
   let active = false;
   let locked = false;
   let drag = false;
-  let mode = 'menu';
+  let mode: WorldMode = 'menu';
   let feet = 0;
   let last = performance.now();
-  let frame;
+  let frame: number;
   let reduced = lowMotion;
-  let focus = '';
+  let focus: FocusTarget = '';
   let moving = false;
   const keys = new Set();
   const direction = new T.Vector3();
@@ -626,7 +645,7 @@ export function createWorld(host, onState, onFootstep, readRadioWaveform) {
   const rotation = new T.Euler(0,0,0,'YXZ');
   const menuTarget = new T.Vector3(-.45,1.32,-3.5);
 
-  function lookAt(target) {
+  function lookAt(target: T.Vector3) {
     camera.position.copy(position);
     camera.lookAt(target);
     rotation.copy(camera.rotation);
@@ -638,21 +657,21 @@ export function createWorld(host, onState, onFootstep, readRadioWaveform) {
     keys.clear();
     onState({locked});
   }
-  function keyDown(event) {
+  function keyDown(event: KeyboardEvent) {
     if (!active || event.altKey || event.metaKey || event.ctrlKey) return;
     if (['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowLeft','ArrowDown','ArrowRight'].includes(event.code)) {
       event.preventDefault();
       keys.add(event.code);
     }
   }
-  const keyUp = event => keys.delete(event.code);
+  const keyUp = (event: KeyboardEvent) => keys.delete(event.code);
   const blur = () => { keys.clear(); drag = false; };
-  function rotate(event) {
+  function rotate(event: MouseEvent) {
     if (!active || (!locked && !drag)) return;
     rotation.y -= event.movementX * .00205;
     rotation.x = T.MathUtils.clamp(rotation.x - event.movementY * .00205,-1.25,1.25);
   }
-  const mouseDown = event => {
+  const mouseDown = (event: MouseEvent) => {
     if (!active || locked || event.button !== 0) return;
     drag = true;
   };
@@ -665,14 +684,14 @@ export function createWorld(host, onState, onFootstep, readRadioWaveform) {
   renderer.domElement.addEventListener('mousedown',mouseDown);
   window.addEventListener('mouseup',mouseUp);
 
-  function collision(x,z) {
+  function collision(x: number, z: number) {
     const within = x > -4.01 && x < 4.00 && z > -3.70 && z < 4.32;
     const desk = x > -3.04 && x < .92 && z > -3.68 && z < -1.59;
     const crates = x > 1.88 && x < 3.82 && z < -2.97;
     return within && !desk && !crates;
   }
 
-  function step(dt,t) {
+  function step(dt: number, t: number) {
     if (!active) {
       if (mode === 'menu' && !reduced) {
         camera.position.copy(position);
@@ -701,7 +720,7 @@ export function createWorld(host, onState, onFootstep, readRadioWaveform) {
     camera.getWorldDirection(direction);
     toFocus.copy(RADIO).sub(camera.position);
     distance.copy(BRIDGE).sub(camera.position);
-    let target = '';
+    let target: FocusTarget = '';
     if (toFocus.length() < 2.5 && direction.dot(toFocus.normalize()) > .874) target = 'radio';
     if (direction.dot(distance.normalize()) > .943 && position.z < .8 && position.x > .45) target = 'bridge';
     if (target !== focus) {
@@ -711,7 +730,7 @@ export function createWorld(host, onState, onFootstep, readRadioWaveform) {
   }
 
   let elapsed = 0;
-  function render(now) {
+  function render(now: number) {
     const dt = Math.min(.04,(now-last)/1000);
     last=now;
     elapsed += dt;
@@ -739,7 +758,7 @@ export function createWorld(host, onState, onFootstep, readRadioWaveform) {
     keys.clear();
   }
   return {
-    setMode(next) {
+    setMode(next: WorldMode) {
       if (next === 'play' && mode !== 'play') {
         position.copy(SHOT);
         mug.position.copy(mugStart);
@@ -753,7 +772,7 @@ export function createWorld(host, onState, onFootstep, readRadioWaveform) {
     },
     requestLock, release, updateRadio,
     passWater() { movedMug = true; },
-    aimAt(target) {
+    aimAt(target: 'bridge' | 'radio') {
       if (target === 'bridge') {
         position.set(2.54,1.64,-2.5);
         lookAt(BRIDGE);
@@ -771,10 +790,10 @@ export function createWorld(host, onState, onFootstep, readRadioWaveform) {
       const image = document.createElement('canvas');
       image.width = Math.round(source.width * .56);
       image.height = Math.round(source.height * .58);
-      image.getContext('2d').drawImage(source,x,y,image.width,image.height,0,0,image.width,image.height);
+      canvasContext(image).drawImage(source,x,y,image.width,image.height,0,0,image.width,image.height);
       return image.toDataURL('image/jpeg',.91);
     },
-    setLow(value) {
+    setLow(value: boolean) {
       performanceMode = value;
       bloom.enabled = !value;
       filmPass.uniforms.strength.value = value ? .40 : 1;
@@ -794,12 +813,22 @@ export function createWorld(host, onState, onFootstep, readRadioWaveform) {
       window.removeEventListener('blur',blur);
       window.removeEventListener('mouseup',mouseUp);
       renderer.domElement.removeEventListener('mousedown',mouseDown);
-      const materials = new Set();
+      const materials = new Set<T.Material>();
+      const geometries = new Set<T.BufferGeometry>();
+      const textures = new Set<T.Texture>();
       scene.traverse(node => {
-        node.geometry?.dispose();
-        if (node.material) materials.add(node.material);
+        if (!(node instanceof T.Mesh || node instanceof T.LineSegments)) return;
+        geometries.add(node.geometry);
+        const assigned = Array.isArray(node.material) ? node.material : [node.material];
+        for (const material of assigned) materials.add(material);
+        if (node instanceof T.InstancedMesh) node.dispose();
       });
-      for (const mat of materials) { mat.map?.dispose(); mat.dispose(); }
+      for (const material of materials) {
+        if ('map' in material && material.map instanceof T.Texture) textures.add(material.map);
+        material.dispose();
+      }
+      for (const geometry of geometries) geometry.dispose();
+      for (const texture of textures) texture.dispose();
       bloom.dispose(); filmPass.dispose(); output.dispose();
       composer.dispose(); renderer.dispose(); renderer.domElement.remove();
     }

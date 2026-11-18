@@ -4,9 +4,11 @@
 
 ## เปิดเล่น
 
+ใช้ Node.js 22.12+ หรือ 24 และ pnpm ตามรุ่นที่ระบุใน `package.json`
+
 ```bash
-npm ci
-npm run dev
+pnpm install --frozen-lockfile
+pnpm dev
 ```
 
 เปิด [http://localhost:5173](http://localhost:5173) ใน Chrome หรือ Edge บนคอมพิวเตอร์ที่รองรับ WebGL 2
@@ -33,7 +35,9 @@ python scripts/generate-voice.py \
 
 ชุดนี้อ้างอิงไฟล์ `assets/000000.wav` ที่มากับเดโม Thonburian TTS เลือก `--line incoming` เพื่อทดสอบประโยคแรกก่อนสร้างทุกประโยค โมเดลเผยแพร่ภายใต้ CC BY-NC-SA 4.0 ตามที่ผู้พัฒนาระบุ
 
-`npm run build` สร้างชุดไฟล์สำหรับโฮสต์แบบ static ใน `dist/`
+## ตรวจโค้ดและ deploy
+
+`pnpm typecheck` ตรวจชนิดข้อมูล TypeScript และ `pnpm build` ตรวจชนิดข้อมูลแล้วสร้างไฟล์ static ใน `dist/` สำหรับ Cloudflare Pages ใช้ build command `pnpm build` และ output directory `dist` ตั้งตัวแปรบิลด์ `PNPM_VERSION=10.33.2` ให้ตรงกับ `package.json`
 
 ## ที่มา
 

@@ -1,5 +1,5 @@
-export function makeReceiver(context, output) {
-  function filter(type, frequency, q, gain = 0) {
+export function makeReceiver(context: BaseAudioContext, output: AudioNode) {
+  function filter(type: BiquadFilterType, frequency: number, q: number, gain = 0) {
     const node = context.createBiquadFilter();
     node.type = type;
     node.frequency.value = frequency;
@@ -47,9 +47,14 @@ export function makeReceiver(context, output) {
   return input;
 }
 
-export function connectTransmission(context, sample, receiver, at) {
+export function connectTransmission(
+  context: BaseAudioContext,
+  sample: AudioBufferSourceNode,
+  receiver: AudioNode,
+  at: number,
+  duration: number
+) {
   const channel = context.createGain();
-  const {duration} = sample.buffer;
   const end = at + duration;
   const level = channel.gain;
   level.setValueAtTime(.68, at);

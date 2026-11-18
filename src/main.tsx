@@ -1,32 +1,41 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import type {ReactNode} from 'react';
 import { createRoot } from 'react-dom/client';
-import { createWorld } from './world.js';
-import { makeAudio } from './audio.js';
-import { useMicrophone } from './microphone.js';
+import { createWorld } from './world';
+import { makeAudio } from './audio';
+import type {Transmission} from './audio';
+import { useMicrophone } from './microphone';
 import dialogue from './dialogue.json';
-import { getIntent, replyFor, replyHints, story } from './story.js';
+import { getIntent, replyFor, replyHints, story } from './story';
+import type {DialogueId, Intent, ListenStep, SceneId, TurnId} from './story';
 import './style.css';
 
 const thaiCharacters = new Intl.Segmenter('th', {granularity: 'grapheme'});
-const seconds = ms => new Promise(resolve => setTimeout(resolve, ms));
+const waitMs = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 const callSteps = story.flatMap(({scene, steps}) => steps.map(step => ({...step, scene})));
-const captions = { sigh: '(ถอนหายใจเบา ๆ)', laugh: '(หัวเราะเบา ๆ)' };
+const captions: Partial<Record<DialogueId, string>> = { sigh: '(ถอนหายใจเบา ๆ)', laugh: '(หัวเราะเบา ๆ)' };
 
-function useWorld(audio) {
-  const host = useRef(null);
-  const world = useRef(null);
+type GameAudio = ReturnType<typeof makeAudio>;
+type GameView = 'menu' | 'play' | 'end';
+type PlayerAnswer = {text: string; intent: Intent};
+type PlayerLine = {text: string; visible: string};
+type OpenTurn = {id: TurnId; wait: number; timer?: number; resolve(answer: PlayerAnswer | null): void};
+
+function useWorld(audio: GameAudio) {
+  const host = useRef<HTMLDivElement>(null);
+  const world = useRef<ReturnType<typeof createWorld> | null>(null);
   const [ready, setReady] = useState(false);
   const [locked, setLocked] = useState(false);
   const [error, setError] = useState('');
   useEffect(() => {
     let cancelled = false;
-    Promise.race([document.fonts.load('700 24px FieldThai'), seconds(1200)])
+    Promise.race([document.fonts.load('700 24px FieldThai'), waitMs(1200)])
       .catch(() => {})
       .then(() => {
-        if (cancelled) return;
+        if (cancelled || !host.current) return;
         try {
           world.current = createWorld(host.current, state => {
-            if ('locked' in state) setLocked(state.locked);
+            if (state.locked !== undefined) setLocked(state.locked);
           }, audio.step, audio.readRadioWaveform);
           setReady(true);
         } catch (reason) {
@@ -43,38 +52,39 @@ function useWorld(audio) {
   return {host, world, ready, error, locked};
 }
 
-function Key({children}) { return <kbd>{children}</kbd>; }
+function Key({children}: {children: ReactNode}) { return <kbd>{children}</kbd>; }
 
-function RadioWaveform({audio}) {
-  const canvas = useRef(null);
+function RadioWaveform({audio}: {audio: GameAudio}) {
+  const canvas = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
     const display = canvas.current;
-    const graphics = display.getContext('2d');
-    if (!graphics) return;
+    const graphics = display?.getContext('2d');
+    if (!display || !graphics) return;
+    const ctx = graphics;
     const samples = new Float32Array(512);
     const {width, height} = display;
     const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
-    graphics.strokeStyle = getComputedStyle(display).color;
-    graphics.lineWidth = 2;
-    graphics.lineJoin = 'round';
+    ctx.strokeStyle = getComputedStyle(display).color;
+    ctx.lineWidth = 2;
+    ctx.lineJoin = 'round';
 
-    let frame;
+    let frame: number;
     let lastFrame = -Infinity;
-    function draw(at) {
+    function draw(at: number) {
       if (at - lastFrame >= 30) {
         lastFrame = at;
         if (reducedMotion.matches) samples.fill(0);
         else audio.readRadioWaveform(samples);
-        graphics.clearRect(0, 0, width, height);
-        graphics.beginPath();
+        ctx.clearRect(0, 0, width, height);
+        ctx.beginPath();
         for (let index = 0; index < samples.length; index += 4) {
           const x = width * index / (samples.length - 4);
           const y = height / 2 - Math.max(-1, Math.min(1, samples[index] * 1.45)) * height * .4;
-          if (index === 0) graphics.moveTo(x, y);
-          else graphics.lineTo(x, y);
+          if (index === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
         }
-        graphics.stroke();
+        ctx.stroke();
       }
       frame = requestAnimationFrame(draw);
     }
@@ -88,22 +98,22 @@ function RadioWaveform({audio}) {
 function Game() {
   const [audio] = useState(makeAudio);
   const {host, world, ready, error, locked} = useWorld(audio);
-  const [view, setView] = useState('menu');
+  const [view, setView] = useState<GameView>('menu');
   const [muted, setMuted] = useState(false);
   const [low, setLow] = useState(false);
-  const [scene, setScene] = useState('');
-  const [line, setLine] = useState(null);
-  const [turn, setTurn] = useState(null);
-  const [playerLine, setPlayerLine] = useState(null);
+  const [scene, setScene] = useState<SceneId | null>(null);
+  const [line, setLine] = useState<DialogueId | null>(null);
+  const [turn, setTurn] = useState<TurnId | null>(null);
+  const [playerLine, setPlayerLine] = useState<PlayerLine | null>(null);
   const [feedback, setFeedback] = useState('');
   const [recorded, setRecorded] = useState(false);
-  const openTurn = useRef(null);
-  const run = useRef(null);
-  const live = useRef(null);
-  const endTitle = useRef(null);
+  const openTurn = useRef<OpenTurn | null>(null);
+  const run = useRef<symbol | null>(null);
+  const live = useRef<{playing: boolean; microphone: ReturnType<typeof useMicrophone>} | null>(null);
+  const endTitle = useRef<HTMLHeadingElement>(null);
   const playing = view === 'play';
 
-  function finishTurn(answer) {
+  function finishTurn(answer: PlayerAnswer | null) {
     const current = openTurn.current;
     if (!current) return;
     openTurn.current = null;
@@ -117,9 +127,9 @@ function Game() {
     current.resolve(answer);
   }
 
-  function armTurn(current, wait = current.wait) {
+  function armTurn(current: OpenTurn, wait = current.wait) {
     clearTimeout(current.timer);
-    current.timer = setTimeout(() => finishTurn(null), wait);
+    current.timer = window.setTimeout(() => finishTurn(null), wait);
   }
 
   const microphone = useMicrophone({
@@ -137,53 +147,54 @@ function Game() {
     }
   });
 
-  function offerTurn(step) {
+  function offerTurn(step: ListenStep) {
     setLine(null);
     setTurn(step.turn);
     setFeedback('');
-    return new Promise(resolve => {
-      const active = { id: step.turn, wait: step.wait, timer: 0, resolve };
+    return new Promise<PlayerAnswer | null>(resolve => {
+      const active = {id: step.turn, wait: step.wait, resolve};
       openTurn.current = active;
       armTurn(active);
     });
   }
 
-  async function showPlayerLine(text, token) {
+  async function showPlayerLine(text: string, token: symbol) {
     const characters = Array.from(thaiCharacters.segment(text), part => part.segment);
     const batch = Math.max(1, Math.ceil(characters.length / 42));
     setPlayerLine({text, visible: ''});
     for (let i = batch; i < characters.length; i += batch) {
-      await seconds(34);
+      await waitMs(34);
       if (run.current !== token) return;
       setPlayerLine({text, visible: characters.slice(0, i).join('')});
     }
     setPlayerLine({text, visible: text});
-    await seconds(Math.min(1500, 650 + characters.length * 11));
+    await waitMs(Math.min(1500, 650 + characters.length * 11));
     if (run.current === token) setPlayerLine(null);
   }
 
-  async function speak(id, transmission) {
+  async function speak(id: DialogueId, transmission?: Transmission) {
     setLine(id);
     await audio.voice(id, dialogue[id], transmission);
   }
 
-  async function playStory(token) {
+  async function playStory(token: symbol) {
     for (const [index, step] of callSteps.entries()) {
       if (run.current !== token) return;
       const previous = callSteps[index - 1];
       if (step.scene !== previous?.scene) setScene(step.scene);
 
-      if (step.line) {
+      if ('line' in step) {
+        const next = callSteps[index + 1];
         await speak(step.line, {
-          keyOn: !previous?.line,
-          keyOff: !callSteps[index + 1]?.line
+          keyOn: !(previous && 'line' in previous),
+          keyOff: !(next && 'line' in next)
         });
         if (run.current !== token) return;
-        await seconds(step.after);
-      } else if (step.pause) {
+        await waitMs(step.after);
+      } else if ('pause' in step) {
         setLine(null);
-        await seconds(step.pause);
-      } else if (step.signal) {
+        await waitMs(step.pause);
+      } else if ('signal' in step) {
         audio[step.signal]();
       } else {
         const answer = await offerTurn(step);
@@ -193,19 +204,20 @@ function Game() {
         const reply = replyFor(step.turn, answer?.intent, answer?.text);
         if (reply) {
           await speak(reply);
-          await seconds(step.turn === 'hardship' || step.turn === 'kindness' ? 760 : 400);
+          await waitMs(step.turn === 'hardship' || step.turn === 'kindness' ? 760 : 400);
         }
       }
     }
     if (run.current !== token) return;
     setLine(null);
     setView('end');
-    world.current.setMode('end');
+    world.current?.setMode('end');
     audio.piano();
   }
 
   function start() {
-    if (!ready || playing) return;
+    const room = world.current;
+    if (!room || !ready || playing) return;
     const token = Symbol('call');
     run.current = token;
     setScene('incoming');
@@ -214,37 +226,37 @@ function Game() {
     setPlayerLine(null);
     setFeedback('');
     setRecorded(false);
-    document.activeElement?.blur();
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
     audio.start();
-    audio.warm(Object.keys(dialogue));
-    world.current.setMode('play');
-    world.current.aimAt('radio');
+    audio.warm(Object.keys(dialogue) as DialogueId[]);
+    room.setMode('play');
+    room.aimAt('radio');
     setView('play');
     playStory(token).catch(reason => {
       if (run.current !== token) return;
       console.error(reason);
       finishTurn(null);
       audio.stopVoice();
-      world.current.setMode('end');
+      world.current?.setMode('end');
       setView('end');
     });
   }
 
-  live.current = { playing, microphone, openTurn };
+  live.current = {playing, microphone};
   useEffect(() => {
-    function down(event) {
+    function down(event: KeyboardEvent) {
       const state = live.current;
-      if (!state.playing || event.repeat || event.altKey || event.ctrlKey || event.metaKey) return;
-      if (event.code === 'Space' && state.openTurn.current && state.microphone.available) {
+      if (!state?.playing || event.repeat || event.altKey || event.ctrlKey || event.metaKey) return;
+      if (event.code === 'Space' && openTurn.current && state.microphone.available) {
         if (event.defaultPrevented) return;
         event.preventDefault();
         state.microphone.press();
       }
     }
-    function up(event) {
-      if (event.code === 'Space') live.current.microphone.release();
+    function up(event: KeyboardEvent) {
+      if (event.code === 'Space') live.current?.microphone.release();
     }
-    function blur() { live.current.microphone.release(); }
+    function blur() { live.current?.microphone.release(); }
     window.addEventListener('keydown', down);
     window.addEventListener('keyup', up);
     window.addEventListener('blur', blur);
@@ -273,14 +285,14 @@ function Game() {
     : scene === 'incoming' ? 'รอสัญญาณจากหน่วย 04' : 'สายยังเชื่อมอยู่';
 
   useEffect(() => {
-    if (ready) world.current.updateRadio('หน่วย 04', radioStatus, playing, undefined, recorded);
+    if (ready) world.current?.updateRadio('หน่วย 04', radioStatus, playing, undefined, recorded);
   }, [ready, world, radioStatus, playing, recorded]);
 
   useEffect(() => {
     if (view === 'end') endTitle.current?.focus({ preventScroll: true });
   }, [view]);
 
-  function adjust(type) {
+  function adjust(type: 'sound' | 'quality') {
     if (type === 'sound') {
       audio.mute(!muted);
       setMuted(!muted);
@@ -293,7 +305,7 @@ function Game() {
 
   return <main className="game" data-view={view} data-scene={playing ? scene : undefined}>
     <div ref={host} className="world" onClick={() => {
-      if (playing && !locked) world.current.requestLock();
+      if (playing && !locked) world.current?.requestLock();
     }}/>
     {view !== 'play' && <div className="scrim"/>}
     {view === 'menu' && <header className="top">
@@ -354,4 +366,6 @@ function Game() {
   </main>;
 }
 
-createRoot(document.getElementById('root')).render(<Game/>);
+const root = document.getElementById('root');
+if (!root) throw new Error('Missing game root element');
+createRoot(root).render(<Game/>);

@@ -1,29 +1,54 @@
-import {connectTransmission, makeReceiver} from './receiver.js';
+import {connectTransmission, makeReceiver} from './receiver';
+import type {DialogueId} from './story';
+
+export interface Transmission {
+  keyOn?: boolean;
+  keyOff?: boolean;
+}
+
+interface VoiceJob {
+  cancel?: () => void;
+  silence?: () => void;
+}
 
 const asset = import.meta.env.BASE_URL + 'stillwater-voice/';
 
 export function makeAudio() {
-  let context, master, ambience, radio, radioAnalyser, radioHiss, noise, current, music, manifest, muted = false;
-  const clips = new Map();
+  let context: AudioContext | undefined;
+  let master: GainNode | undefined;
+  let ambience: GainNode | undefined;
+  let radio: BiquadFilterNode | undefined;
+  let radioAnalyser: AnalyserNode | undefined;
+  let radioHiss: GainNode | undefined;
+  let noise: AudioBuffer | undefined;
+  let current: VoiceJob | null = null;
+  let music: GainNode | null = null;
+  let manifest: Promise<unknown> | undefined;
+  let muted = false;
+  const clips = new Map<DialogueId, Promise<AudioBuffer | null>>();
   const volume = { ambience: .7 };
 
-  function fetchClip(id) {
-    if (!context) return Promise.resolve(null);
+  function fetchClip(id: DialogueId): Promise<AudioBuffer | null> {
+    const decoder = context;
+    if (!decoder) return Promise.resolve(null);
+    const cached = clips.get(id);
+    if (cached) return cached;
     manifest ??= fetch(asset + 'manifest.json', { signal: AbortSignal.timeout(4000) })
       .then(response => response.ok ? response.json() : null).catch(() => null);
-    if (!clips.has(id)) {
-      clips.set(id, manifest.then(files => {
-        const path = files?.[id];
-        return path ? fetch(asset + path, { signal: AbortSignal.timeout(5000) }) : null;
-      }).then(response => response?.ok ? response.arrayBuffer() : null)
-        .then(buffer => buffer ? context.decodeAudioData(buffer) : null)
-        .catch(() => null));
-    }
-    return clips.get(id);
+    const clip = manifest.then(files => {
+      const path: unknown = files && typeof files === 'object' ? Reflect.get(files, id) : null;
+      return typeof path === 'string' && path
+        ? fetch(asset + path, { signal: AbortSignal.timeout(5000) })
+        : null;
+    }).then(response => response?.ok ? response.arrayBuffer() : null)
+      .then(buffer => buffer ? decoder.decodeAudioData(buffer) : null)
+      .catch(() => null);
+    clips.set(id, clip);
+    return clip;
   }
 
   function start() {
-    const AudioContext = window.AudioContext ?? window.webkitAudioContext;
+    const AudioContext = window.AudioContext ?? (window as Window & {webkitAudioContext?: typeof globalThis.AudioContext}).webkitAudioContext;
     if (!AudioContext) return;
     if (!context) {
       context = new AudioContext();
@@ -88,13 +113,13 @@ export function makeAudio() {
     context.resume().catch(() => {});
   }
 
-  function listening(active) {
-    if (!ambience) return;
+  function listening(active: boolean) {
+    if (!context || !ambience) return;
     ambience.gain.setTargetAtTime(active ? .22 : volume.ambience, context.currentTime, .1);
   }
 
-  function carrier(active) {
-    if (!radioHiss) return;
+  function carrier(active: boolean) {
+    if (!context || !radioHiss) return;
     radioHiss.gain.setTargetAtTime(active ? .013 : 0, context.currentTime, .035);
   }
 
@@ -106,25 +131,27 @@ export function makeAudio() {
     listening(false);
   }
 
-  async function voice(id, text, { keyOn = true, keyOff = true } = {}) {
+  async function voice(id: DialogueId, text: string, {keyOn = true, keyOff = true}: Transmission = {}) {
     if (current) stopVoice();
-    const job = {};
+    const job: VoiceJob = {};
     current = job;
     const buffer = await fetchClip(id);
+    const playbackContext = context;
+    const receiver = radio;
     if (current !== job) return;
     listening(true);
-    await new Promise(resolve => {
+    await new Promise<void>(resolve => {
       let settled = false;
       function finish() {
         if (settled) return;
         settled = true;
         resolve();
       }
-      if (buffer) {
-        const sample = context.createBufferSource();
+      if (buffer && playbackContext && receiver) {
+        const sample = playbackContext.createBufferSource();
         sample.buffer = buffer;
-        const at = context.currentTime + .018;
-        const channel = connectTransmission(context, sample, radio, at);
+        const at = playbackContext.currentTime + .018;
+        const channel = connectTransmission(playbackContext, sample, receiver, at, buffer.duration);
         carrier(true);
         if (keyOn) hiss(2110, .068, .052);
         sample.onended = () => {
@@ -177,8 +204,8 @@ export function makeAudio() {
     }
   }
 
-  function note(frequency, length, offset, peak, type = 'sine', output = master) {
-    if (!context) return;
+  function note(frequency: number, length: number, offset: number, peak: number, type: OscillatorType = 'sine', output = master) {
+    if (!context || !output) return;
     const at = context.currentTime + offset;
     const oscillator = context.createOscillator();
     oscillator.frequency.value = frequency;
@@ -193,8 +220,8 @@ export function makeAudio() {
     oscillator.stop(at+length);
   }
 
-  function hiss(frequency, length, volume) {
-    if (!context) return;
+  function hiss(frequency: number, length: number, volume: number) {
+    if (!context || !master || !noise) return;
     const at = context.currentTime;
     const signal = context.createBufferSource();
     signal.buffer = noise;
@@ -211,15 +238,15 @@ export function makeAudio() {
 
   return {
     start, voice, stopVoice, listening,
-    warm(ids) { if (context) ids.forEach(fetchClip); },
-    readRadioWaveform(samples) {
+    warm(ids: readonly DialogueId[]) { if (context) ids.forEach(fetchClip); },
+    readRadioWaveform(samples: Float32Array<ArrayBuffer>) {
       if (radioAnalyser) radioAnalyser.getFloatTimeDomainData(samples);
       else samples.fill(0);
     },
-    mute(value) {
+    mute(value: boolean) {
       muted = value;
       if (value) current?.silence?.();
-      if (master) master.gain.setTargetAtTime(value ? 0 : .86,context.currentTime,.06);
+      if (context && master) master.gain.setTargetAtTime(value ? 0 : .86,context.currentTime,.06);
     },
     ring() { hiss(1520,.3,.18); note(585,.12,.06,.075,'triangle'); note(708,.15,.24,.07,'triangle'); },
     confirm() { hiss(1260,.15,.11); note(610,.09,.035,.036,'triangle'); },
@@ -227,12 +254,14 @@ export function makeAudio() {
     step() { hiss(157,.14,.13); note(63,.14,0,.065,'triangle'); },
     hangup() { hiss(1750,.47,.12); note(470,.13,.18,.04,'triangle'); },
     piano() {
-      if (!context) return;
-      music = context.createGain();
-      music.gain.setValueAtTime(0,context.currentTime);
-      music.gain.linearRampToValueAtTime(1,context.currentTime + 1.15);
-      music.connect(master);
-      const play = (frequency,length,offset,peak,type) => note(frequency,length,offset,peak,type,music);
+      if (!context || !master) return;
+      const pianoBus = context.createGain();
+      music = pianoBus;
+      pianoBus.gain.setValueAtTime(0,context.currentTime);
+      pianoBus.gain.linearRampToValueAtTime(1,context.currentTime + 1.15);
+      pianoBus.connect(master);
+      const play = (frequency: number, length: number, offset: number, peak: number, type?: OscillatorType) =>
+        note(frequency, length, offset, peak, type, pianoBus);
       const phrase = [261.63,329.63,391.99,440,391.99,329.63,293.66,261.63];
       phrase.forEach((pitch,index) => {
         const at = index*2.7;
