@@ -309,7 +309,7 @@ function Game() {
     }}/>
     {view !== 'play' && <div className="scrim"/>}
     {view === 'menu' && <header className="top">
-      <div className="site"><span className="compass" aria-hidden="true">✦</span><div>Stillwater Forest<small>ศูนย์วิทยุผืนป่าตะวันตก</small></div></div>
+      <div className="site"><span className="compass" aria-hidden="true">✦</span><div>The Park Radio<small>ศูนย์วิทยุผืนป่าตะวันตก</small></div></div>
       <div className="settings">
         <button onClick={() => adjust('sound')} aria-pressed={!muted}>{muted ? 'ปิดเสียง' : 'เปิดเสียง'}</button>
         <button onClick={() => adjust('quality')} aria-pressed={low}>{low ? 'กราฟิกเบา' : 'กราฟิกเต็ม'}</button>
