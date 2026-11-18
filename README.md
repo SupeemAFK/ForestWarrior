@@ -1,29 +1,31 @@
-# The Park Radio — ศูนย์ ได้ยินไหม?
+# The Park Radio
 
-เกมสั้นมุมมองบุคคลที่หนึ่งบนเว็บ รับสายจากหน่วยลาดตระเวน 04 ในคืนฝนตก รอบปกติใช้ประมาณ 1–2 นาที หากกำลังพูดหรือรอผลถอดคำพูด เกมจะรอให้จบก่อนดำเนินเรื่อง
+A short first-person browser game about a night shift at a forest radio station. You take a call from Patrol Unit 04 on a rainy night. A session usually takes 1–2 minutes, and the conversation waits while you speak or the browser finishes transcribing.
 
-## เปิดเล่น
+## Run locally
 
-ใช้ Node.js 22.12+ หรือ 24 และ pnpm ตามรุ่นที่ระบุใน `package.json`
+Use Node.js 22.12 or later and the pnpm version specified in `package.json`.
 
 ```bash
 pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-เปิด [http://localhost:5173](http://localhost:5173) ใน Chrome หรือ Edge บนคอมพิวเตอร์ที่รองรับ WebGL 2
+Open [http://localhost:5173](http://localhost:5173) in Chrome or Edge on a desktop computer with WebGL 2 support.
 
-เดินด้วย **WASD** และขยับเมาส์เพื่อหันกล้อง หากเมาส์หลุดจากฉาก ให้คลิกหรือลากเมาส์บนฉาก
+Use **WASD** to walk and move the mouse to look around. If the pointer is released, click or drag on the scene to look around again.
 
-เมื่อถึงตาคุณ เกมจะแสดงคำใบ้ตามบทสนทนา กด **Space ค้างแล้วพูด** ข้อความถอดเสียงชั่วคราวจะขึ้นระหว่างพูด ปล่อย Space เพื่อส่งคำพูด ซับของคุณจะค่อย ๆ ขึ้น จากนั้นหน่วย 04 จะตอบพร้อมซับของตัวเอง หากเงียบ สายจะดำเนินต่อหลังเว้นจังหวะ
+When a reply prompt appears, **hold Space and speak**. A live transcript appears as you talk. Release Space to send your reply. Your subtitle appears before Unit 04 responds with its own subtitles. If you stay silent, the conversation resumes after a pause.
 
-การถอดเสียงใช้ Web Speech Recognition ภาษาไทยของเบราว์เซอร์ บริการอาจต้องใช้อินเทอร์เน็ตและสิทธิ์ไมค์บน localhost หรือ HTTPS เกมเก็บข้อความไว้ในรอบที่เล่น
+The game uses the browser's Web Speech API for Thai transcription. Speech recognition may require an internet connection and microphone permission on localhost or HTTPS. The game keeps transcripts in memory for the current session.
 
-## เสียงพากย์
+## Voice audio
 
-ชุดที่มากับเกมเป็นเสียง FLAC 26 คลิปที่เรนเดอร์ในเครื่องด้วย Thonburian TTS MegaF5 โดยใช้เสียงอ้างอิงจากเดโมของผู้พัฒนา เกมโหลดไฟล์ตาม `public/stillwater-voice/manifest.json` และรอคลิปเล่นจบก่อนเปลี่ยนบท จังหวะพักกำหนดแยกตามประโยค คลื่นข้างซับของหน่วย 04 แสดงสัญญาณเสียงจากวิทยุที่กำลังเล่น สัญญาณเสียงพูดผ่าน compressor, saturation แบบไม่สมมาตร และฟิลเตอร์จำลองลำโพงวิทยุ พร้อมการมอดูเลตเบา ๆ และการลดสัญญาณช่วงสั้นในคลิปยาว เมื่อหาไฟล์ไม่เจอ เกมใช้เสียงภาษาไทยของเบราว์เซอร์ถ้ามี
+The game ships with 26 FLAC clips generated locally with Thonburian TTS MegaF5 using a reference recording from the model's demo. It loads the clips listed in `public/stillwater-voice/manifest.json` and waits for each clip to finish before advancing. Pauses are set per line, and the waveform next to Unit 04's subtitles follows the live radio signal.
 
-สคริปต์ `scripts/generate-voice.py` สร้างชุดเสียงล่วงหน้าจาก [Thonburian TTS](https://github.com/biodatlab/thonburian-tts) ด้วยโมเดลและเสียงอ้างอิงในเครื่อง ติดตั้งแพ็กเกจตาม README ของ Thonburian ก่อน แล้วใช้ [checkpoint MegaF5 กับ vocabulary ของผู้พัฒนา](https://huggingface.co/biodatlab/ThonburianTTS/tree/main/megaF5)
+Speech passes through compression, asymmetric saturation, and filters that simulate a radio speaker. The effect also adds subtle modulation and a brief signal dip in longer clips. If a clip is unavailable, the game uses Thai browser text-to-speech when available.
+
+`scripts/generate-voice.py` generates the voice clips locally with [Thonburian TTS](https://github.com/biodatlab/thonburian-tts). Install the dependencies from the Thonburian README, then download the [MegaF5 checkpoint and vocabulary](https://huggingface.co/biodatlab/ThonburianTTS/tree/main/megaF5).
 
 ```bash
 python scripts/generate-voice.py \
@@ -33,14 +35,25 @@ python scripts/generate-voice.py \
   --reference-text 'ใครเป็นผู้รับ'
 ```
 
-ชุดนี้อ้างอิงไฟล์ `assets/000000.wav` ที่มากับเดโม Thonburian TTS เลือก `--line incoming` เพื่อทดสอบประโยคแรกก่อนสร้างทุกประโยค โมเดลเผยแพร่ภายใต้ CC BY-NC-SA 4.0 ตามที่ผู้พัฒนาระบุ
+The reference text must match the Thai speech in the demo recording. Add `--line incoming` to generate just the opening line for a quick check. The model is distributed under CC BY-NC-SA 4.0, as specified by its authors.
 
-## ตรวจโค้ดและ deploy
+## Type-check and build
 
-`pnpm typecheck` ตรวจชนิดข้อมูล TypeScript และ `pnpm build` ตรวจชนิดข้อมูลแล้วสร้างไฟล์ static ใน `dist/` สำหรับ Cloudflare Pages ใช้ build command `pnpm build` และ output directory `dist` ตั้งตัวแปรบิลด์ `PNPM_VERSION=10.33.2` ให้ตรงกับ `package.json`
+Run `pnpm typecheck` to check TypeScript. Run `pnpm build` to type-check and generate the static site in `dist/`.
 
-## ที่มา
+## Deploy to Cloudflare Workers
 
-- เรื่องได้รับแรงบันดาลใจจากบทสัมภาษณ์พี่บัวและพี่เกด มูลนิธิสืบนาคะเสถียร ตัวละครและบทพูดเป็นเรื่องแต่ง
-- การสนทนาแบบกดค้างพูดอ้างอิงจาก [3AM Stories](https://3am.x10.games/presskit/)
-- Noto Sans Thai เผยแพร่ตาม SIL Open Font License ที่แนบไว้ใน `public/`
+`wrangler.json` targets the `forestwarrior` Worker and serves the static site from `dist/`.
+
+```bash
+pnpm exec wrangler login
+pnpm run deploy
+```
+
+The deploy script builds the game before uploading it. For Git integration through Workers Builds, set the build command to `pnpm build` and the deploy command to `pnpm exec wrangler deploy`.
+
+## Credits
+
+- The story was inspired by real interviews with Bua and Ked, staff of the Seub Nakhasathien Foundation. The game's characters and dialogue are fictional.
+- The push-to-talk interaction was inspired by [3AM Stories](https://3am.x10.games/presskit/).
+- Noto Sans Thai is distributed under the SIL Open Font License included in `public/`.
