@@ -13,6 +13,8 @@ pnpm dev
 
 Open [http://localhost:5173](http://localhost:5173) in Chrome or Edge on a desktop computer with WebGL 2 support.
 
+Use the **TH / EN** buttons at any time to change the interface and NPC subtitles immediately. Your selection is remembered on this browser. Radio audio and speech recognition use Thai, and player transcripts show the words captured by the microphone.
+
 Use **WASD** to walk and move the mouse to look around. If the pointer is released, click or drag on the scene to look around again.
 
 When a reply prompt appears, **hold Space and speak**. A live transcript appears as you talk. Release Space to send your reply. Your subtitle appears before Unit 04 responds with its own subtitles. If you stay silent, the conversation resumes after a pause.

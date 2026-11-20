@@ -1,3 +1,4 @@
+import type {UiText} from './i18n';
 import {useEffect, useRef, useState} from 'react';
 
 const Recognition = window.SpeechRecognition ?? window.webkitSpeechRecognition;
@@ -6,7 +7,7 @@ type MicrophoneStatus = 'idle' | 'recording' | 'transcribing' | 'captured';
 
 interface MicrophoneCallbacks {
   onTranscript(text: string): void;
-  onError(message: string): void;
+  onError(message: UiText): void;
   onBusy(): void;
 }
 

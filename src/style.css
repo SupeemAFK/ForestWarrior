@@ -99,3 +99,12 @@ kbd { font: 650 .72rem var(--font); padding: 1px 5px; border: 1px solid var(--li
 
 .radioSubtitleHead { display: flex; align-items: center; justify-content: center; gap: 10px; }
 .radioWaveform { display: block; width: 96px; height: 17px; color: var(--signal); }
+
+.languageSwitch { display: inline-flex; gap: 2px; }
+.languageSwitch button[aria-pressed="true"] { color: var(--black); background: var(--warm); border-color: var(--warm); }
+.top .settings { margin-left: auto; }
+[data-view="play"] .top, [data-view="end"] .top { padding: 18px 20px; }
+html[lang="en"] .title h1 { font-size: clamp(3rem,7vw,7rem); }
+@media (max-width: 640px) {
+  .movementHint { top: 62px; }
+}

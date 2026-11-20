@@ -1,3 +1,4 @@
+import type {UiText} from './i18n';
 import type dialogue from './dialogue.json';
 
 export type DialogueId = keyof typeof dialogue;
@@ -43,7 +44,7 @@ export const story: ReadonlyArray<{scene: SceneId; steps: readonly StoryStep[]}>
   ] }
 ];
 
-export const replyHints: Record<TurnId, string> = {
+export const replyHints: Record<TurnId, UiText> = {
   pickup: 'ลองตอบว่า “ศูนย์ได้ยินชัดครับ”',
   report: 'ลองบอกว่า “ยังอยู่ครับ เล่าต่อได้เลย”',
   hardship: 'ลองบอกว่าเข้าใจ หรือถามว่าอะไรทำให้เขาเหนื่อยที่สุด',

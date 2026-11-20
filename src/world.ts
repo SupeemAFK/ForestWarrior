@@ -337,7 +337,7 @@ function desk(scene: T.Scene, boards: readonly T.Material[], support: T.Material
     drawScope();
   }
 
-  function updateRadio(channel: string, status: string, live: boolean, transcript?: string, recorded = false) {
+  function updateRadio(channel: string, status: string, live: boolean, transcript?: string, recorded = false, labels = {station: 'สถานีวิทยุภาคสนาม', recorded: 'บันทึกรายงานแล้ว'}) {
     ctx.fillStyle = '#192b21'; ctx.fillRect(0, 0, 512, 144);
     ctx.fillStyle = '#a6e3a6'; ctx.textBaseline = 'middle';
     ctx.font = '700 55px FieldThai, sans-serif'; ctx.fillText(channel, 26, 54);
@@ -350,7 +350,7 @@ function desk(scene: T.Scene, boards: readonly T.Material[], support: T.Material
     consoleCtx.fillRect(0,0,768,69);
     consoleCtx.fillStyle = '#12271b';
     consoleCtx.font = '700 31px FieldThai, sans-serif';
-    consoleCtx.fillText('สถานีวิทยุภาคสนาม',31,45);
+    consoleCtx.fillText(labels.station,31,45);
     consoleCtx.fillStyle = '#d2ead1';
     consoleCtx.font = '700 64px FieldThai, sans-serif';
     consoleCtx.fillText(channel,31,172);
@@ -384,7 +384,7 @@ function desk(scene: T.Scene, boards: readonly T.Material[], support: T.Material
     if (recorded) {
       consoleCtx.fillStyle = '#91b69a';
       consoleCtx.font = '24px FieldThai, sans-serif';
-      consoleCtx.fillText('บันทึกรายงานแล้ว',31,435);
+      consoleCtx.fillText(labels.recorded,31,435);
     }
     consoleCtx.strokeStyle = '#294430';
     for (let y=2;y<460;y+=6) {
